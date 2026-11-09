@@ -1,15 +1,17 @@
 import hashlib
+import io
 import json
 import re
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from groq import Groq
 
 # ------------------------------------------------------------
-# TEO (DJ Coach) - Fase 2 + Voce: chat, ricerca online, microfono e risposta a voce
+# TEO (DJ Coach) - chat, ricerca online, voce, documenti (CSV, Excel, Word, PDF, TXT) e download
 # ------------------------------------------------------------
 
 st.set_page_config(page_title="Teo", page_icon="🎧", layout="centered")
@@ -56,8 +58,8 @@ section[data-testid="stSidebar"] { background: var(--pannello); border-right: 1p
   border-radius: 10px;
 }
 [data-testid="stChatInput"] textarea { color: var(--ghiaccio); }
-.stButton button { border: 1px solid var(--reattore); background: transparent; color: var(--reattore); font-family: 'Rajdhani', sans-serif; font-weight: 600; }
-.stButton button:hover { background: var(--reattore); color: var(--fondo); border-color: var(--reattore); }
+.stButton button, .stDownloadButton button { border: 1px solid var(--reattore); background: transparent; color: var(--reattore); font-family: 'Rajdhani', sans-serif; font-weight: 600; }
+.stButton button:hover, .stDownloadButton button:hover { background: var(--reattore); color: var(--fondo); border-color: var(--reattore); }
 </style>
 """
 st.markdown(STILE, unsafe_allow_html=True)
@@ -84,6 +86,10 @@ REGOLE_TECNICHE = """
 Regole tecniche:
 - Se ti vengono forniti RISULTATI DI RICERCA WEB, usali come base per i dati aggiornati, indica da quale
   fonte arrivano e non inventare nulla che non sia scritto lì. Se i risultati non bastano, dillo.
+- Se ti vengono forniti DOCUMENTI CARICATI DALL'UTENTE, usali come fonte principale per le domande
+  sulla sua libreria, sulle sue scalette o sui suoi file. Se i dati sono stati tagliati, dillo.
+- Se l'utente ti chiede di riorganizzare, riscrivere o sistemare un documento, restituisci il testo
+  completo già riorganizzato, senza riassumerlo e senza inventare contenuti che non ci sono.
 - Se non sei sicuro di un dato (BPM, tonalità, anno), dillo invece di inventare.
 """
 
@@ -134,7 +140,7 @@ def decidi_ricerca(modello, messaggi):
         "informazioni aggiornate su internet (nuove uscite, classifiche, date di eventi, notizie, "
         "informazioni su artisti, locali o prodotti specifici, dati che cambiano nel tempo). Cerca SEMPRE per trend, hit del momento, classifiche, Beatport, Spotify, Shazam, DJ chart, suggerimenti mensili di nuovi brani e piani di marketing con costi aggiornati. "
         'Se serve, rispondi SOLO con un oggetto JSON come questo: {"cerca": "query breve di ricerca"}. '
-        'Se NON serve (consigli, teoria, mixaggio, conversazione generale), rispondi SOLO: {"cerca": ""}. '
+        'Se NON serve (consigli, teoria, mixaggio, conversazione generale, domande o richieste di riorganizzazione sui documenti caricati dall\'utente), rispondi SOLO: {"cerca": ""}. '
         "Oggi e' il " + date.today().strftime("%d/%m/%Y") + "."
     )
     try:
@@ -176,6 +182,146 @@ def testo_per_il_cervello(ricerca, risultati):
 
 def testo_fonti(risultati):
     return "\n".join(f"- [{r.get('title', 'Fonte')}]({r.get('href', '')})" for r in risultati if r.get("href"))
+
+
+# ---------- Documenti: lettura di CSV, Excel, Word, PDF, TXT ----------
+def leggi_csv(dati):
+    """Legge un CSV riconoscendo da solo il separatore (, o ;) e la codifica."""
+    for codifica in ("utf-8", "latin-1"):
+        try:
+            return pd.read_csv(io.BytesIO(dati), sep=None, engine="python", encoding=codifica)
+        except Exception:
+            continue
+    raise ValueError("CSV non leggibile")
+
+
+def decodifica_testo(dati):
+    for codifica in ("utf-8", "latin-1"):
+        try:
+            return dati.decode(codifica)
+        except Exception:
+            continue
+    return dati.decode("utf-8", errors="ignore")
+
+
+@st.cache_data(show_spinner=False)
+def estrai_testo(nome, dati):
+    """Trasforma un file in testo. Restituisce (testo, descrizione)."""
+    n = nome.lower()
+
+    if n.endswith(".csv"):
+        df = leggi_csv(dati)
+        return df.to_csv(index=False), f"CSV, {len(df)} righe, colonne: {', '.join(map(str, df.columns))}"
+
+    if n.endswith((".xlsx", ".xlsm")):
+        fogli = pd.read_excel(io.BytesIO(dati), sheet_name=None)  # serve openpyxl
+        parti = []
+        for nome_foglio, df in fogli.items():
+            parti.append(f"--- Foglio '{nome_foglio}' ({len(df)} righe) ---\n{df.to_csv(index=False)}")
+        return "\n".join(parti), f"Excel, {len(fogli)} fogli"
+
+    if n.endswith(".docx"):
+        from docx import Document  # serve python-docx
+
+        d = Document(io.BytesIO(dati))
+        righe = []
+        for p in d.paragraphs:
+            t = p.text.strip()
+            if not t:
+                continue
+            stile = (p.style.name or "").lower() if p.style is not None else ""
+            righe.append(("## " + t) if stile.startswith(("heading", "titolo")) else t)
+        for tab in d.tables:
+            righe.append("[TABELLA]")
+            for riga in tab.rows:
+                righe.append(" | ".join(c.text.strip() for c in riga.cells))
+        return "\n".join(righe), f"Word, {len(d.paragraphs)} paragrafi, {len(d.tables)} tabelle"
+
+    if n.endswith(".pdf"):
+        from pypdf import PdfReader  # serve pypdf
+
+        lettore = PdfReader(io.BytesIO(dati))
+        pagine = [(p.extract_text() or "").strip() for p in lettore.pages]
+        testo = "\n\n".join(f"[Pagina {i}]\n{t}" for i, t in enumerate(pagine, 1) if t)
+        if not testo:
+            raise ValueError("PDF senza testo selezionabile (forse è una scansione)")
+        return testo, f"PDF, {len(pagine)} pagine"
+
+    if n.endswith((".txt", ".md")):
+        testo = decodifica_testo(dati)
+        return testo, f"testo, {len(testo)} caratteri"
+
+    raise ValueError("formato non supportato")
+
+
+def documenti_per_il_cervello(files, limite):
+    """Prepara il testo dei file da dare a Teo. Restituisce (testo, avvisi)."""
+    blocchi, avvisi = [], []
+    budget = limite // max(len(files), 1)
+    for f in files:
+        try:
+            testo, info = estrai_testo(f.name, f.getvalue())
+        except ImportError as e:
+            avvisi.append(f"{f.name}: manca una libreria ({e.name}). Aggiungila a requirements.txt.")
+            continue
+        except Exception as e:
+            avvisi.append(f"{f.name}: non riesco a leggerlo ({e}).")
+            continue
+        nota = ""
+        if len(testo) > budget:
+            testo = testo[:budget].rsplit("\n", 1)[0]
+            nota = " - ATTENZIONE: file tagliato, c'è altro contenuto che non vedi"
+            avvisi.append(f"{f.name}: troppo lungo, letta solo una parte. Alza il limite qui sotto.")
+        blocchi.append(f"FILE '{f.name}' ({info}){nota}\n{testo}")
+    if not blocchi:
+        return "", avvisi
+    return "DOCUMENTI CARICATI DALL'UTENTE (usali per rispondere):\n\n" + "\n\n".join(blocchi), avvisi
+
+
+# ---------- Download della risposta (Word e testo) ----------
+def crea_docx(testo):
+    """Trasforma la risposta (markdown semplice) in un file Word. Restituisce i byte, o None."""
+    try:
+        from docx import Document
+    except ImportError:
+        return None
+    d = Document()
+    for riga in testo.split("\n"):
+        r = riga.rstrip().replace("**", "").replace("`", "")
+        if not r.strip() or re.fullmatch(r"[\s|:\-]+", r):
+            continue
+        m = re.match(r"^(#{1,3})\s+(.*)", r)
+        if m:
+            d.add_heading(m.group(2), level=len(m.group(1)))
+        elif re.match(r"^\s*[-*•]\s+", r):
+            d.add_paragraph(re.sub(r"^\s*[-*•]\s+", "", r), style="List Bullet")
+        elif re.match(r"^\s*\d+[.)]\s+", r):
+            d.add_paragraph(re.sub(r"^\s*\d+[.)]\s+", "", r), style="List Number")
+        else:
+            d.add_paragraph(r)
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
+def pulsanti_scarica(testo, chiave):
+    with st.expander("⬇️ Scarica questa risposta come file"):
+        dati_word = crea_docx(testo)
+        if dati_word:
+            st.download_button(
+                "Word (.docx)",
+                data=dati_word,
+                file_name="teo_risposta.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key=f"word_{chiave}",
+            )
+        st.download_button(
+            "Testo (.txt)",
+            data=testo.encode("utf-8"),
+            file_name="teo_risposta.txt",
+            mime="text/plain",
+            key=f"txt_{chiave}",
+        )
 
 
 # ---------- Voce: trascrizione (tu parli) e lettura (lui parla) ----------
@@ -247,6 +393,26 @@ with st.sidebar:
     ricerca_attiva = st.toggle("Ricerca online", value=True)
     microfono_attivo = st.toggle("Microfono (parli tu)", value=True)
     voce_attiva = st.toggle("Risposta a voce (parla lui)", value=True)
+
+    file_caricati = st.file_uploader(
+        "Carica file (CSV, Excel, Word, PDF, TXT)",
+        type=["csv", "xlsx", "xlsm", "docx", "pdf", "txt", "md"],
+        accept_multiple_files=True,
+    )
+    contesto_documenti = ""
+    if file_caricati:
+        limite_caratteri = st.slider(
+            "Quanto testo leggere (caratteri)",
+            min_value=4000,
+            max_value=40000,
+            value=12000,
+            step=1000,
+            help="Più è alto, più Teo vede dei tuoi file, ma consuma più token. Sul piano gratuito di Groq se è troppo alto può dare errore.",
+        )
+        contesto_documenti, avvisi_documenti = documenti_per_il_cervello(file_caricati, limite_caratteri)
+        for avviso in avvisi_documenti:
+            st.warning(avviso)
+
     st.caption("Regole di Teo: file istruzioni_teo.txt letto ✅" if FILE_CARICATO else "Regole di Teo: file non trovato, uso quelle base ⚠️")
     if st.button("Nuova conversazione"):
         st.session_state.messaggi = []
@@ -293,9 +459,12 @@ with zona_storia:
             if m.get("fonti"):
                 with st.expander("Fonti"):
                     st.markdown(m["fonti"])
-            # Pulsante Ascolta solo sull'ultima risposta (e se non ne stiamo creando una nuova)
-            if voce_attiva and not domanda and indice == ultimo and m["role"] == "assistant":
-                voce_html(m["content"], automatica=False)
+            # Pulsanti solo sull'ultima risposta (e se non ne stiamo creando una nuova)
+            if not domanda and indice == ultimo and m["role"] == "assistant":
+                if voce_attiva:
+                    voce_html(m["content"], automatica=False)
+                if file_caricati and not m["content"].startswith("Non riesco a rispondere"):
+                    pulsanti_scarica(m["content"], f"storia_{indice}")
 
     if domanda:
         st.session_state.messaggi.append({"role": "user", "content": domanda})
@@ -307,8 +476,11 @@ with zona_storia:
             if voce_attiva or testo_vocale:
                 istruzioni += (
                     "\nL'utente potrebbe ascoltare la tua risposta a voce: sii breve e parlato, "
-                    "evita tabelle e elenchi lunghi."
+                    "evita tabelle e elenchi lunghi. Fa eccezione se ti chiede di riorganizzare "
+                    "o riscrivere un documento: in quel caso scrivi il testo completo."
                 )
+            if contesto_documenti:
+                istruzioni += "\n\n" + contesto_documenti
             fonti = ""
 
             if ricerca_attiva:
@@ -348,7 +520,10 @@ with zona_storia:
                 with st.expander("Fonti"):
                     st.markdown(fonti)
 
-            if voce_attiva and not risposta.startswith("Non riesco a rispondere"):
+            errore_risposta = risposta.startswith("Non riesco a rispondere")
+            if voce_attiva and not errore_risposta:
                 voce_html(risposta, automatica=True)
+            if file_caricati and not errore_risposta:
+                pulsanti_scarica(risposta, "nuova")
 
         st.session_state.messaggi.append({"role": "assistant", "content": risposta, "fonti": fonti})
