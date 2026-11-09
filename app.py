@@ -1,8 +1,12 @@
+import json
+import re
+from datetime import date
+
 import streamlit as st
 from groq import Groq
 
 # ------------------------------------------------------------
-# DJ COACH - Fase 1: chat con il tuo Co-DJ
+# DJ COACH - Fase 2: chat + ricerca online
 # ------------------------------------------------------------
 
 st.set_page_config(page_title="DJ Coach", page_icon="🎧", layout="centered")
@@ -82,6 +86,8 @@ Regole:
   PERCHÉ funzionano insieme.
 - Se non sei sicuro di un dato (BPM, tonalità, anno), dillo invece di inventare.
 - Fai al massimo una domanda alla volta per capire meglio il contesto (locale, pubblico, durata del set).
+- Se ti vengono forniti RISULTATI DI RICERCA WEB, usali come base per i dati aggiornati, indica da quale
+  fonte arrivano e non inventare nulla che non sia scritto lì. Se i risultati non bastano, dillo.
 """
 
 # ---------- Collegamento al cervello (Groq) ----------
@@ -107,14 +113,74 @@ def elenco_modelli():
         return []
 
 
+# ---------- Ricerca online ----------
+def decidi_ricerca(modello, messaggi):
+    """Chiede al cervello se serve cercare su internet. Restituisce la ricerca da fare, o '' se non serve."""
+    regole = (
+        "Sei un filtro. Decidi se per rispondere all'ultimo messaggio dell'utente serve cercare "
+        "informazioni aggiornate su internet (nuove uscite, classifiche, date di eventi, notizie, "
+        "informazioni su artisti, locali o prodotti specifici, dati che cambiano nel tempo). "
+        'Se serve, rispondi SOLO con un oggetto JSON come questo: {"cerca": "query breve di ricerca"}. '
+        'Se NON serve (consigli, teoria, mixaggio, conversazione generale), rispondi SOLO: {"cerca": ""}. '
+        "Oggi e' il " + date.today().strftime("%d/%m/%Y") + "."
+    )
+    try:
+        ultimi = [{"role": m["role"], "content": m["content"]} for m in messaggi[-6:]]
+        r = client.chat.completions.create(
+            model=modello,
+            messages=[{"role": "system", "content": regole}] + ultimi,
+            temperature=0,
+            max_tokens=80,
+        )
+        testo = r.choices[0].message.content or ""
+        trovato = re.search(r"\{.*?\}", testo, re.S)
+        if trovato:
+            return str(json.loads(trovato.group(0)).get("cerca", "")).strip()
+    except Exception:
+        pass
+    return ""
+
+
+def cerca_web(ricerca):
+    """Cerca su DuckDuckGo (gratis, senza chiave). Restituisce (risultati, errore)."""
+    try:
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
+        risultati = DDGS().text(ricerca, region="it-it", max_results=6)
+        return list(risultati or []), ""
+    except Exception as errore:
+        return [], str(errore)
+
+
+def testo_per_il_cervello(ricerca, risultati):
+    righe = [f"RISULTATI DI RICERCA WEB (ricerca: '{ricerca}', data di oggi: {date.today().strftime('%d/%m/%Y')}):"]
+    for i, r in enumerate(risultati, 1):
+        righe.append(f"[{i}] {r.get('title', '')} - {r.get('body', '')} (fonte: {r.get('href', '')})")
+    return "\n".join(righe)
+
+
+def testo_fonti(risultati):
+    return "\n".join(f"- [{r.get('title', 'Fonte')}]({r.get('href', '')})" for r in risultati if r.get("href"))
+
+
+# ---------- Menu laterale ----------
 with st.sidebar:
     st.markdown("### Impostazioni")
     modelli = elenco_modelli()
     if modelli:
-        predefinito = next((i for i, m in enumerate(modelli) if "70b" in m), 0)
+        preferiti = ("llama-3.3-70b", "gpt-oss-120b", "70b", "120b", "qwen", "llama", "gpt-oss")
+        predefinito = 0
+        for parola in preferiti:
+            trovato = next((i for i, m in enumerate(modelli) if parola in m.lower()), None)
+            if trovato is not None:
+                predefinito = trovato
+                break
         modello = st.selectbox("Cervello (modello)", modelli, index=predefinito)
     else:
         modello = st.text_input("Cervello (modello)", value="llama-3.3-70b-versatile")
+    ricerca_attiva = st.toggle("Ricerca online", value=True)
     if st.button("Nuova conversazione"):
         st.session_state.messaggi = []
         st.rerun()
@@ -129,6 +195,9 @@ if not st.session_state.messaggi:
 for m in st.session_state.messaggi:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
+        if m.get("fonti"):
+            with st.expander("Fonti"):
+                st.markdown(m["fonti"])
 
 domanda = st.chat_input("Scrivi al tuo DJ Coach...")
 
@@ -138,12 +207,32 @@ if domanda:
         st.markdown(domanda)
 
     with st.chat_message("assistant"):
+        istruzioni = ISTRUZIONI + f"\nOggi è il {date.today().strftime('%d/%m/%Y')}."
+        fonti = ""
+
+        if ricerca_attiva:
+            with st.spinner("Valuto se serve cercare online..."):
+                ricerca = decidi_ricerca(modello, st.session_state.messaggi)
+            if ricerca:
+                with st.spinner(f"Cerco online: {ricerca}"):
+                    risultati, errore = cerca_web(ricerca)
+                if risultati:
+                    istruzioni += "\n\n" + testo_per_il_cervello(ricerca, risultati)
+                    fonti = testo_fonti(risultati)
+                else:
+                    istruzioni += (
+                        "\n\nHai provato a cercare online ma la ricerca non ha dato risultati. "
+                        "Dillo all'utente e rispondi solo con ciò che sai con certezza."
+                    )
+
         spazio = st.empty()
         risposta = ""
         try:
-            conversazione = [{"role": "system", "content": ISTRUZIONI}] + st.session_state.messaggi[-20:]
+            storia = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messaggi[-20:]]
             flusso = client.chat.completions.create(
-                model=modello, messages=conversazione, stream=True
+                model=modello,
+                messages=[{"role": "system", "content": istruzioni}] + storia,
+                stream=True,
             )
             for pezzo in flusso:
                 risposta += pezzo.choices[0].delta.content or ""
@@ -152,5 +241,10 @@ if domanda:
         except Exception as errore:
             risposta = f"Non riesco a rispondere: {errore}"
             spazio.error(risposta)
+            fonti = ""
 
-    st.session_state.messaggi.append({"role": "assistant", "content": risposta})
+        if fonti:
+            with st.expander("Fonti"):
+                st.markdown(fonti)
+
+    st.session_state.messaggi.append({"role": "assistant", "content": risposta, "fonti": fonti})
