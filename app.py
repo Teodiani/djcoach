@@ -8,10 +8,10 @@ import streamlit.components.v1 as components
 from groq import Groq
 
 # ------------------------------------------------------------
-# DJ COACH - Fase 2 + Voce: chat, ricerca online, microfono e risposta a voce
+# TEO (DJ Coach) - Fase 2 + Voce: chat, ricerca online, microfono e risposta a voce
 # ------------------------------------------------------------
 
-st.set_page_config(page_title="DJ Coach", page_icon="🎧", layout="centered")
+st.set_page_config(page_title="Teo", page_icon="🎧", layout="centered")
 
 # ---------- Aspetto grafico (stile Jarvis) ----------
 STILE = """
@@ -66,7 +66,7 @@ st.markdown(
     <div class="testata">
       <div class="reattore"></div>
       <div>
-        <div class="titolo">DJ COACH</div>
+        <div class="titolo">TEO</div>
         <div class="sottotitolo">Il tuo Co-DJ e consulente musicale personale</div>
       </div>
     </div>
@@ -75,7 +75,8 @@ st.markdown(
 )
 
 # ---------- Personalità del DJ Coach ----------
-ISTRUZIONI = """Sei DJ Coach, il Co-DJ e consulente musicale personale dell'utente, in stile Jarvis di Iron Man:
+ISTRUZIONI = """Sei Teo, il DJ Coach: Co-DJ e consulente musicale personale dell'utente, in stile Jarvis di Iron Man.
+Ti chiami Teo e, se serve, ti presenti con questo nome. Sei:
 professionale, brillante, un po' ironico, sempre al servizio dell'utente.
 
 Competenze: selezione musicale, costruzione di scaletta e set, mixaggio armonico (ruota di Camelot),
@@ -175,7 +176,7 @@ def trascrivi(dati_audio):
             file=("voce.wav", dati_audio),
             model="whisper-large-v3-turbo",
             language="it",
-            prompt="DJ set, BPM, house, techno, mix, Camelot, Beatport, Traktor, Rekordbox, Serato, CDJ",
+            prompt="Teo, DJ set, BPM, house, techno, mix, Camelot, Beatport, Traktor, Rekordbox, Serato, CDJ",
         )
         return (getattr(r, "text", "") or "").strip(), ""
     except Exception as errore:
@@ -266,13 +267,13 @@ if microfono_attivo:
                 elif not testo_vocale:
                     st.warning("Non ho sentito nulla. Riprova avvicinandoti al microfono.")
 
-domanda = st.chat_input("Scrivi al tuo DJ Coach...")
+domanda = st.chat_input("Scrivi a Teo...")
 if testo_vocale:
     domanda = testo_vocale
 
 with zona_storia:
     if not st.session_state.messaggi:
-        st.markdown("Sono pronto. Dimmi cosa stai preparando: un set, una serata, un nuovo genere da studiare?")
+        st.markdown("Ciao, sono Teo, il tuo Co-DJ. Dimmi cosa stai preparando: un set, una serata, un nuovo genere da studiare?")
 
     ultimo = len(st.session_state.messaggi) - 1
     for indice, m in enumerate(st.session_state.messaggi):
