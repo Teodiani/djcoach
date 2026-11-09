@@ -1,12 +1,14 @@
+import hashlib
 import json
 import re
 from datetime import date
 
 import streamlit as st
+import streamlit.components.v1 as components
 from groq import Groq
 
 # ------------------------------------------------------------
-# DJ COACH - Fase 2: chat + ricerca online
+# DJ COACH - Fase 2 + Voce: chat, ricerca online, microfono e risposta a voce
 # ------------------------------------------------------------
 
 st.set_page_config(page_title="DJ Coach", page_icon="🎧", layout="centered")
@@ -165,6 +167,57 @@ def testo_fonti(risultati):
     return "\n".join(f"- [{r.get('title', 'Fonte')}]({r.get('href', '')})" for r in risultati if r.get("href"))
 
 
+# ---------- Voce: trascrizione (tu parli) e lettura (lui parla) ----------
+def trascrivi(dati_audio):
+    """Trasforma la tua voce in testo con Whisper di Groq. Restituisce (testo, errore)."""
+    try:
+        r = client.audio.transcriptions.create(
+            file=("voce.wav", dati_audio),
+            model="whisper-large-v3-turbo",
+            language="it",
+            prompt="DJ set, BPM, house, techno, mix, Camelot, Beatport, Traktor, Rekordbox, Serato, CDJ",
+        )
+        return (getattr(r, "text", "") or "").strip(), ""
+    except Exception as errore:
+        return "", str(errore)
+
+
+MODELLO_VOCE = """
+<div style="display:flex; gap:8px; font-family: sans-serif;">
+  <button id="ascolta" style="padding:6px 14px; border:1px solid #4fd8ff; background:transparent; color:#4fd8ff; border-radius:6px; font-size:15px; cursor:pointer;">🔊 Ascolta</button>
+  <button id="ferma" style="padding:6px 14px; border:1px solid #4fd8ff; background:transparent; color:#4fd8ff; border-radius:6px; font-size:15px; cursor:pointer;">⏹ Stop</button>
+</div>
+<script>
+  const testo = __TESTO__;
+  function parla() {
+    if (!window.speechSynthesis) { return; }
+    window.speechSynthesis.cancel();
+    const frasi = testo.match(/[^.!?]+[.!?]*/g) || [testo];
+    const voci = window.speechSynthesis.getVoices().filter(v => v.lang && v.lang.toLowerCase().startsWith('it'));
+    frasi.forEach(f => {
+      const u = new SpeechSynthesisUtterance(f.trim());
+      u.lang = 'it-IT';
+      if (voci.length) { u.voice = voci[0]; }
+      window.speechSynthesis.speak(u);
+    });
+  }
+  document.getElementById('ascolta').onclick = parla;
+  document.getElementById('ferma').onclick = function () { window.speechSynthesis.cancel(); };
+  if (__AUTO__) { setTimeout(parla, 300); }
+</script>
+"""
+
+
+def voce_html(testo, automatica=False):
+    """Mostra i pulsanti Ascolta/Stop. La voce è quella del tuo telefono o computer (gratis)."""
+    pulito = re.sub(r"https?://\S+", " ", testo)
+    pulito = re.sub(r"[*_#`>~|]", " ", pulito)
+    pulito = re.sub(r"\s+", " ", pulito).strip()
+    js = json.dumps(pulito).replace("</", "<\\/")
+    html = MODELLO_VOCE.replace("__TESTO__", js).replace("__AUTO__", "true" if automatica else "false")
+    components.html(html, height=50)
+
+
 # ---------- Menu laterale ----------
 with st.sidebar:
     st.markdown("### Impostazioni")
@@ -181,6 +234,8 @@ with st.sidebar:
     else:
         modello = st.text_input("Cervello (modello)", value="llama-3.3-70b-versatile")
     ricerca_attiva = st.toggle("Ricerca online", value=True)
+    microfono_attivo = st.toggle("Microfono (parli tu)", value=True)
+    voce_attiva = st.toggle("Risposta a voce (parla lui)", value=True)
     if st.button("Nuova conversazione"):
         st.session_state.messaggi = []
         st.rerun()
@@ -188,63 +243,100 @@ with st.sidebar:
 # ---------- Chat ----------
 if "messaggi" not in st.session_state:
     st.session_state.messaggi = []
+if "ultimo_audio" not in st.session_state:
+    st.session_state.ultimo_audio = ""
 
-if not st.session_state.messaggi:
-    st.markdown("Sono pronto. Dimmi cosa stai preparando: un set, una serata, un nuovo genere da studiare?")
+# Due "zone" della pagina: sopra la conversazione, sotto il microfono.
+zona_storia = st.container()
+zona_microfono = st.container()
 
-for m in st.session_state.messaggi:
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
-        if m.get("fonti"):
-            with st.expander("Fonti"):
-                st.markdown(m["fonti"])
+testo_vocale = ""
+if microfono_attivo:
+    with zona_microfono:
+        registrazione = st.audio_input("🎙️ Tocca per parlare, tocca ancora per fermare")
+        if registrazione is not None:
+            dati = registrazione.getvalue()
+            impronta = hashlib.md5(dati).hexdigest()
+            if impronta != st.session_state.ultimo_audio:
+                st.session_state.ultimo_audio = impronta
+                with st.spinner("Ti ascolto..."):
+                    testo_vocale, errore_voce = trascrivi(dati)
+                if errore_voce:
+                    st.error(f"Non sono riuscito a capire l'audio: {errore_voce}")
+                elif not testo_vocale:
+                    st.warning("Non ho sentito nulla. Riprova avvicinandoti al microfono.")
 
 domanda = st.chat_input("Scrivi al tuo DJ Coach...")
+if testo_vocale:
+    domanda = testo_vocale
 
-if domanda:
-    st.session_state.messaggi.append({"role": "user", "content": domanda})
-    with st.chat_message("user"):
-        st.markdown(domanda)
+with zona_storia:
+    if not st.session_state.messaggi:
+        st.markdown("Sono pronto. Dimmi cosa stai preparando: un set, una serata, un nuovo genere da studiare?")
 
-    with st.chat_message("assistant"):
-        istruzioni = ISTRUZIONI + f"\nOggi è il {date.today().strftime('%d/%m/%Y')}."
-        fonti = ""
+    ultimo = len(st.session_state.messaggi) - 1
+    for indice, m in enumerate(st.session_state.messaggi):
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+            if m.get("fonti"):
+                with st.expander("Fonti"):
+                    st.markdown(m["fonti"])
+            # Pulsante Ascolta solo sull'ultima risposta (e se non ne stiamo creando una nuova)
+            if voce_attiva and not domanda and indice == ultimo and m["role"] == "assistant":
+                voce_html(m["content"], automatica=False)
 
-        if ricerca_attiva:
-            with st.spinner("Valuto se serve cercare online..."):
-                ricerca = decidi_ricerca(modello, st.session_state.messaggi)
-            if ricerca:
-                with st.spinner(f"Cerco online: {ricerca}"):
-                    risultati, errore = cerca_web(ricerca)
-                if risultati:
-                    istruzioni += "\n\n" + testo_per_il_cervello(ricerca, risultati)
-                    fonti = testo_fonti(risultati)
-                else:
-                    istruzioni += (
-                        "\n\nHai provato a cercare online ma la ricerca non ha dato risultati. "
-                        "Dillo all'utente e rispondi solo con ciò che sai con certezza."
-                    )
+    if domanda:
+        st.session_state.messaggi.append({"role": "user", "content": domanda})
+        with st.chat_message("user"):
+            st.markdown(domanda)
 
-        spazio = st.empty()
-        risposta = ""
-        try:
-            storia = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messaggi[-20:]]
-            flusso = client.chat.completions.create(
-                model=modello,
-                messages=[{"role": "system", "content": istruzioni}] + storia,
-                stream=True,
-            )
-            for pezzo in flusso:
-                risposta += pezzo.choices[0].delta.content or ""
-                spazio.markdown(risposta + "▌")
-            spazio.markdown(risposta)
-        except Exception as errore:
-            risposta = f"Non riesco a rispondere: {errore}"
-            spazio.error(risposta)
+        with st.chat_message("assistant"):
+            istruzioni = ISTRUZIONI + f"\nOggi è il {date.today().strftime('%d/%m/%Y')}."
+            if voce_attiva or testo_vocale:
+                istruzioni += (
+                    "\nL'utente potrebbe ascoltare la tua risposta a voce: sii breve e parlato, "
+                    "evita tabelle e elenchi lunghi."
+                )
             fonti = ""
 
-        if fonti:
-            with st.expander("Fonti"):
-                st.markdown(fonti)
+            if ricerca_attiva:
+                with st.spinner("Valuto se serve cercare online..."):
+                    ricerca = decidi_ricerca(modello, st.session_state.messaggi)
+                if ricerca:
+                    with st.spinner(f"Cerco online: {ricerca}"):
+                        risultati, errore = cerca_web(ricerca)
+                    if risultati:
+                        istruzioni += "\n\n" + testo_per_il_cervello(ricerca, risultati)
+                        fonti = testo_fonti(risultati)
+                    else:
+                        istruzioni += (
+                            "\n\nHai provato a cercare online ma la ricerca non ha dato risultati. "
+                            "Dillo all'utente e rispondi solo con ciò che sai con certezza."
+                        )
 
-    st.session_state.messaggi.append({"role": "assistant", "content": risposta, "fonti": fonti})
+            spazio = st.empty()
+            risposta = ""
+            try:
+                storia = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messaggi[-20:]]
+                flusso = client.chat.completions.create(
+                    model=modello,
+                    messages=[{"role": "system", "content": istruzioni}] + storia,
+                    stream=True,
+                )
+                for pezzo in flusso:
+                    risposta += pezzo.choices[0].delta.content or ""
+                    spazio.markdown(risposta + "▌")
+                spazio.markdown(risposta)
+            except Exception as errore:
+                risposta = f"Non riesco a rispondere: {errore}"
+                spazio.error(risposta)
+                fonti = ""
+
+            if fonti:
+                with st.expander("Fonti"):
+                    st.markdown(fonti)
+
+            if voce_attiva and not risposta.startswith("Non riesco a rispondere"):
+                voce_html(risposta, automatica=True)
+
+        st.session_state.messaggi.append({"role": "assistant", "content": risposta, "fonti": fonti})
