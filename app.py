@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 from datetime import date
+from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -75,23 +76,32 @@ st.markdown(
 )
 
 # ---------- Personalità del DJ Coach ----------
-ISTRUZIONI = """Sei Teo, il DJ Coach: Co-DJ e consulente musicale personale dell'utente, in stile Jarvis di Iron Man.
-Ti chiami Teo e, se serve, ti presenti con questo nome. Sei:
-professionale, brillante, un po' ironico, sempre al servizio dell'utente.
+ISTRUZIONI_DI_RISERVA = """Sei Teo, il Co-DJ e consulente musicale personale dell'utente.
+Rispondi sempre in italiano, in modo chiaro e conciso."""
 
-Competenze: selezione musicale, costruzione di scaletta e set, mixaggio armonico (ruota di Camelot),
-BPM e transizioni, lettura del pubblico, gestione della pista, tecnica e attrezzatura DJ,
-generi e storia della musica elettronica e da ballo.
+REGOLE_TECNICHE = """
 
-Regole:
-- Rispondi sempre in italiano, in modo chiaro e conciso.
-- Quando consigli brani, indica se possibile artista, titolo, BPM e tonalità approssimativi, e spiega
-  PERCHÉ funzionano insieme.
-- Se non sei sicuro di un dato (BPM, tonalità, anno), dillo invece di inventare.
-- Fai al massimo una domanda alla volta per capire meglio il contesto (locale, pubblico, durata del set).
+Regole tecniche:
 - Se ti vengono forniti RISULTATI DI RICERCA WEB, usali come base per i dati aggiornati, indica da quale
   fonte arrivano e non inventare nulla che non sia scritto lì. Se i risultati non bastano, dillo.
+- Se non sei sicuro di un dato (BPM, tonalità, anno), dillo invece di inventare.
 """
+
+
+def carica_istruzioni():
+    """Legge le regole di Teo dal file istruzioni_teo.txt (nella stessa cartella di app.py)."""
+    try:
+        percorso = Path(__file__).parent / "istruzioni_teo.txt"
+        testo = percorso.read_text(encoding="utf-8").strip()
+        if testo:
+            return testo, True
+    except Exception:
+        pass
+    return ISTRUZIONI_DI_RISERVA, False
+
+
+TESTO_REGOLE, FILE_CARICATO = carica_istruzioni()
+ISTRUZIONI = TESTO_REGOLE + REGOLE_TECNICHE
 
 # ---------- Collegamento al cervello (Groq) ----------
 try:
@@ -122,7 +132,7 @@ def decidi_ricerca(modello, messaggi):
     regole = (
         "Sei un filtro. Decidi se per rispondere all'ultimo messaggio dell'utente serve cercare "
         "informazioni aggiornate su internet (nuove uscite, classifiche, date di eventi, notizie, "
-        "informazioni su artisti, locali o prodotti specifici, dati che cambiano nel tempo). "
+        "informazioni su artisti, locali o prodotti specifici, dati che cambiano nel tempo). Cerca SEMPRE per trend, hit del momento, classifiche, Beatport, Spotify, Shazam, DJ chart, suggerimenti mensili di nuovi brani e piani di marketing con costi aggiornati. "
         'Se serve, rispondi SOLO con un oggetto JSON come questo: {"cerca": "query breve di ricerca"}. '
         'Se NON serve (consigli, teoria, mixaggio, conversazione generale), rispondi SOLO: {"cerca": ""}. '
         "Oggi e' il " + date.today().strftime("%d/%m/%Y") + "."
@@ -237,6 +247,7 @@ with st.sidebar:
     ricerca_attiva = st.toggle("Ricerca online", value=True)
     microfono_attivo = st.toggle("Microfono (parli tu)", value=True)
     voce_attiva = st.toggle("Risposta a voce (parla lui)", value=True)
+    st.caption("Regole di Teo: file istruzioni_teo.txt letto ✅" if FILE_CARICATO else "Regole di Teo: file non trovato, uso quelle base ⚠️")
     if st.button("Nuova conversazione"):
         st.session_state.messaggi = []
         st.rerun()
