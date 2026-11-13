@@ -181,27 +181,4 @@ def estrai_testo(nome, dati):
         from docx import Document
         d = Document(io.BytesIO(dati))
         righe = [p.text.strip() for p in d.paragraphs if p.text.strip()]
-        return "\n".join(righe), f"Word, {len(righe)} paragrafi"
-    if n.endswith(".pdf"):
-        from pypdf import PdfReader
-        lettore = PdfReader(io.BytesIO(dati))
-        pagine = [(p.extract_text() or "").strip() for p in lettore.pages]
-        testo = "\n\n".join(pagine)
-        return testo, f"PDF, {len(pagine)} pagine"
-    if n.endswith((".txt", ".md")):
-        testo = decodifica_testo(dati)
-        return testo, f"testo, {len(testo)} caratteri"
-    raise ValueError("formato non supportato")
-
-def elabora_file_caricati(files):
-    testi_documenti = []
-    immagini_payload = []
-    avvisi = []
-    
-    for f in files:
-        ext = f.name.lower()
-        if ext.endswith((".jpg", ".jpeg", ".png", ".webp")):
-            import base64
-            encoded = base64.b64encode(f.getvalue()).decode("utf-8")
-            mime = "image/jpeg" if ext in [".jpg", ".jpeg"] else f"image/{ext.replace('.', '')}"
-            immagini_payload.append({
+        return "\n".join(righe), f
