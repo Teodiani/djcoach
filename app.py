@@ -9,7 +9,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 from openai import OpenAI
 
-# Qui forziamo l'apertura del menu laterale!
 st.set_page_config(page_title="Teo", page_icon="🎧", layout="centered", initial_sidebar_state="expanded")
 
 STILE = """
@@ -124,4 +123,153 @@ def leggi_csv(dati):
 def decodifica_testo(dati):
     for codifica in ("utf-8", "latin-1"):
         try:
-            return dati.decode(cod
+            return dati.decode(codifica)
+        except Exception:
+            continue
+    return dati.decode("utf-8", errors="ignore")
+
+@st.cache_data(show_spinner=False)
+def estrai_testo(nome, dati):
+    n = nome.lower()
+    if n.endswith(".csv"):
+        df = leggi_csv(dati)
+        return df.to_csv(index=False), f"CSV, {len(df)} righe"
+    if n.endswith((".xlsx", ".xlsm")):
+        fogli = pd.read_excel(io.BytesIO(dati), sheet_name=None)
+        parti = []
+        for nome_foglio, df in fogli.items():
+            parti.append(f"--- Foglio '{nome_foglio}' ---\n{df.to_csv(index=False)}")
+        return "\n".join(parti), f"Excel, {len(fogli)} fogli"
+    if n.endswith(".docx"):
+        from docx import Document
+        d = Document(io.BytesIO(dati))
+        righe = [p.text.strip() for p in d.paragraphs if p.text.strip()]
+        return "\n".join(righe), f"Word, {len(righe)} paragrafi"
+    if n.endswith(".pdf"):
+        from pypdf import PdfReader
+        lettore = PdfReader(io.BytesIO(dati))
+        pagine = [(p.extract_text() or "").strip() for p in lettore.pages]
+        testo = "\n\n".join(pagine)
+        return testo, f"PDF, {len(pagine)} pagine"
+    if n.endswith((".txt", ".md")):
+        testo = decodifica_testo(dati)
+        return testo, f"testo, {len(testo)} caratteri"
+    raise ValueError("formato non supportato")
+
+def elabora_file_caricati(files):
+    testi_documenti = []
+    avvisi = []
+    for f in files:
+        try:
+            testo, info = estrai_testo(f.name, f.getvalue())
+            testi_documenti.append(f"FILE '{f.name}' ({info}):\n{testo}")
+        except Exception as e:
+            avvisi.append(f"{f.name}: errore di lettura ({e}).")
+    contesto_testo = "\n\n".join(testi_documenti)
+    if contesto_testo:
+        contesto_testo = "DOCUMENTI CARICATI:\n\n" + contesto_testo
+    return contesto_testo, avvisi
+
+MODELLO_VOCE = """<div style="display:flex; gap:8px;"><button id="ascolta" style="padding:6px 14px; border:1px solid #4fd8ff; background:transparent; color:#4fd8ff; border-radius:6px; cursor:pointer;">🔊 Ascolta</button><button id="ferma" style="padding:6px 14px; border:1px solid #4fd8ff; background:transparent; color:#4fd8ff; border-radius:6px; cursor:pointer;">⏹ Stop</button></div><script>const testo = __TESTO__; function parla() { if (!window.speechSynthesis) { return; } window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(testo); u.lang = 'it-IT'; window.speechSynthesis.speak(u); } document.getElementById('ascolta').onclick = parla; document.getElementById('ferma').onclick = () => window.speechSynthesis.cancel(); if (__AUTO__) { setTimeout(parla, 300); }</script>"""
+
+def voce_html(testo, automatica=False):
+    pulito = re.sub(r"https?://\S+", " ", testo)
+    pulito = re.sub(r"[*_#`>~|]", " ", pulito).strip()
+    js = json.dumps(pulito).replace("</", "<\\/")
+    html = MODELLO_VOCE.replace("__TESTO__", js).replace("__AUTO__", "true" if automatica else "false")
+    components.html(html, height=50)
+
+# ==================== MENU LATERALE ====================
+with st.sidebar:
+    st.markdown("### Impostazioni (LM Studio)")
+    
+    modello_locale = st.text_input("Nome Modello", value="meta-llama-3.1-8b-instruct", help="Nome del modello attivo in LM Studio.")
+
+    ricerca_attiva = st.toggle("Ricerca online", value=True)
+    voce_attiva = st.toggle("Risposta a voce", value=True)
+
+    file_caricati = st.file_uploader(
+        "Carica file (CSV, Excel, PDF, TXT)",
+        type=["csv", "xlsx", "xlsm", "docx", "pdf", "txt", "md"],
+        accept_multiple_files=True,
+    )
+    
+    contesto_documenti = ""
+    if file_caricati:
+        contesto_documenti, avvisi = elabora_file_caricati(file_caricati)
+        for avviso in avvisi:
+            st.warning(avviso)
+
+    st.caption("Regole di Teo: file istruzioni_teo.txt letto ✅" if FILE_CARICATO else "Regole di Teo: file base ⚠️")
+    if st.button("Nuova conversazione"):
+        st.session_state.messaggi = []
+        st.rerun()
+
+# ==================== CHAT PRINCIPALE ====================
+if "messaggi" not in st.session_state:
+    st.session_state.messaggi = []
+
+zona_storia = st.container()
+domanda = st.chat_input("Scrivi a Teo...")
+
+with zona_storia:
+    if not st.session_state.messaggi:
+        st.markdown("Ciao, sono Teo, il tuo Co-DJ in versione **Locale** (alimentato da LM Studio sul tuo PC). Scrivimi qui sotto o carica un file!")
+
+    ultimo = len(st.session_state.messaggi) - 1
+    for indice, m in enumerate(st.session_state.messaggi):
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+            if m.get("fonti"):
+                with st.expander("Fonti"):
+                    st.markdown(m["fonti"])
+            if not domanda and indice == ultimo and m["role"] == "assistant":
+                if voce_attiva:
+                    voce_html(m["content"], automatica=False)
+
+    if domanda:
+        st.session_state.messaggi.append({"role": "user", "content": domanda})
+        with st.chat_message("user"):
+            st.markdown(domanda)
+
+        with st.chat_message("assistant"):
+            istruzioni = ISTRUZIONI + f"\nOggi è il {date.today().strftime('%d/%m/%Y')}."
+            if contesto_documenti:
+                istruzioni += "\n\n" + contesto_documenti
+            fonti = ""
+
+            if ricerca_attiva and ("chi è" in domanda.lower() or "notizie" in domanda.lower() or "quando" in domanda.lower()):
+                with st.spinner("Cerco online..."):
+                    risultati, _ = cerca_web(domanda)
+                    if risultati:
+                        istruzioni += "\n\n" + testo_per_il_cervello(domanda, risultati)
+                        fonti = testo_fonti(risultati)
+
+            spazio = st.empty()
+            risposta = ""
+            try:
+                storia = []
+                for m in st.session_state.messaggi[-20:]:
+                    storia.append({"role": m["role"], "content": m["content"]})
+
+                flusso = client_locale.chat.completions.create(
+                    model=modello_locale if modello_locale else "default",
+                    messages=[{"role": "system", "content": istruzioni}] + storia,
+                    stream=True,
+                )
+                for pezzo in flusso:
+                    risposta += pezzo.choices[0].delta.content or ""
+                    spazio.markdown(risposta + "▌")
+                spazio.markdown(risposta)
+            except Exception as errore:
+                risposta = f"Errore di connessione con LM Studio: {errore}. Assicurati di aver avviato il server su LM Studio (http://localhost:1234)."
+                spazio.error(risposta)
+
+            if fonti:
+                with st.expander("Fonti"):
+                    st.markdown(fonti)
+
+            if voce_attiva and not risposta.startswith("Errore"):
+                voce_html(risposta, automatica=True)
+
+        st.session_state.messaggi.append({"role": "assistant", "content": risposta, "fonti": fonti})
