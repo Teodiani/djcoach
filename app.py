@@ -10,13 +10,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 from groq import Groq
 
-# ------------------------------------------------------------
-# TEO (DJ Coach) - chat, ricerca online, voce, documenti e immagini
-# ------------------------------------------------------------
-
 st.set_page_config(page_title="Teo", page_icon="🎧", layout="centered")
 
-# ---------- Aspetto grafico (stile Jarvis) ----------
 STILE = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Rajdhani:wght@400;500;600&display=swap');
@@ -59,4 +54,154 @@ section[data-testid="stSidebar"] { background: var(--pannello); border-right: 1p
 }
 [data-testid="stChatInput"] textarea { color: var(--ghiaccio); }
 .stButton button, .stDownloadButton button { border: 1px solid var(--reattore); background: transparent; color: var(--reattore); font-family: 'Rajdhani', sans-serif; font-weight: 600; }
-.st
+.stButton button:hover, .stDownloadButton button:hover { background: var(--reattore); color: var(--fondo); border-color: var(--reattore); }
+</style>
+"""
+st.markdown(STILE, unsafe_allow_html=True)
+
+st.markdown(
+    """
+    <div class="testata">
+      <div class="reattore"></div>
+      <div>
+        <div class="titolo">TEO</div>
+        <div class="sottotitolo">Il tuo Co-DJ e consulente musicale personale</div>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+ISTRUZIONI_DI_RISERVA = """Sei Teo, il Co-DJ e consulente musicale personale dell'utente.
+Rispondi sempre in italiano, in modo chiaro e conciso."""
+
+REGOLE_TECNICHE = """
+Regole tecniche:
+- Se ti vengono forniti RISULTATI DI RICERCA WEB, usali come base per i dati aggiornati.
+- Se ti vengono forniti DOCUMENTI o IMMAGINI CARICATI DALL'UTENTE, usali come fonte principale.
+"""
+
+def carica_istruzioni():
+    try:
+        percorso = Path(__file__).parent / "istruzioni_teo.txt"
+        testo = percorso.read_text(encoding="utf-8").strip()
+        if testo:
+            return testo, True
+    except Exception:
+        pass
+    return ISTRUZIONI_DI_RISERVA, False
+
+TESTO_REGOLE, FILE_CARICATO = carica_istruzioni()
+ISTRUZIONI = TESTO_REGOLE + REGOLE_TECNICHE
+
+try:
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+except Exception:
+    st.error("Manca la chiave Groq. Su Streamlit apri Settings > Secrets e inserisci: GROQ_API_KEY = 'la-tua-chiave'")
+    st.stop()
+
+MODELLI_SICURI = [
+    "llama3-70b-8192",
+    "llama-3.2-11b-vision-preview",
+    "llama-3.2-90b-vision-preview",
+    "mixtral-8x7b-32768"
+]
+
+def decidi_ricerca(modello, messaggi):
+    regole = (
+        "Sei un filtro. Decidi se per rispondere all'ultimo messaggio dell'utente serve cercare "
+        "informazioni aggiornate su internet. Rispondi SOLO con un oggetto JSON: {'cerca': 'query breve'} "
+        "oppure {'cerca': ''} se non serve. Oggi e' il " + date.today().strftime("%d/%m/%Y") + "."
+    )
+    try:
+        ultimi = [{"role": m["role"], "content": m["content"]} for m in messaggi[-6:]]
+        r = client.chat.completions.create(
+            model=modello,
+            messages=[{"role": "system", "content": regole}] + ultimi,
+            temperature=0,
+            max_tokens=80,
+        )
+        testo = r.choices[0].message.content or ""
+        trovato = re.search(r"\{.*?\}", testo, re.S)
+        if trovato:
+            return str(json.loads(trovato.group(0)).get("cerca", "")).strip()
+    except Exception:
+        pass
+    return ""
+
+def cerca_web(ricerca):
+    try:
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
+        risultati = DDGS().text(ricerca, region="it-it", max_results=6)
+        return list(risultati or []), ""
+    except Exception as errore:
+        return [], str(errore)
+
+def testo_per_il_cervello(ricerca, risultati):
+    righe = [f"RISULTATI DI RICERCA WEB (ricerca: '{ricerca}'):"]
+    for i, r in enumerate(risultati, 1):
+        righe.append(f"[{i}] {r.get('title', '')} - {r.get('body', '')} (fonte: {r.get('href', '')})")
+    return "\n".join(righe)
+
+def testo_fonti(risultati):
+    return "\n".join(f"- [{r.get('title', 'Fonte')}]({r.get('href', '')})" for r in risultati if r.get("href"))
+
+def leggi_csv(dati):
+    for codifica in ("utf-8", "latin-1"):
+        try:
+            return pd.read_csv(io.BytesIO(dati), sep=None, engine="python", encoding=codifica)
+        except Exception:
+            continue
+    raise ValueError("CSV non leggibile")
+
+def decodifica_testo(dati):
+    for codifica in ("utf-8", "latin-1"):
+        try:
+            return dati.decode(codifica)
+        except Exception:
+            continue
+    return dati.decode("utf-8", errors="ignore")
+
+@st.cache_data(show_spinner=False)
+def estrai_testo(nome, dati):
+    n = nome.lower()
+    if n.endswith(".csv"):
+        df = leggi_csv(dati)
+        return df.to_csv(index=False), f"CSV, {len(df)} righe"
+    if n.endswith((".xlsx", ".xlsm")):
+        fogli = pd.read_excel(io.BytesIO(dati), sheet_name=None)
+        parti = []
+        for nome_foglio, df in fogli.items():
+            parti.append(f"--- Foglio '{nome_foglio}' ---\n{df.to_csv(index=False)}")
+        return "\n".join(parti), f"Excel, {len(fogli)} fogli"
+    if n.endswith(".docx"):
+        from docx import Document
+        d = Document(io.BytesIO(dati))
+        righe = [p.text.strip() for p in d.paragraphs if p.text.strip()]
+        return "\n".join(righe), f"Word, {len(righe)} paragrafi"
+    if n.endswith(".pdf"):
+        from pypdf import PdfReader
+        lettore = PdfReader(io.BytesIO(dati))
+        pagine = [(p.extract_text() or "").strip() for p in lettore.pages]
+        testo = "\n\n".join(pagine)
+        return testo, f"PDF, {len(pagine)} pagine"
+    if n.endswith((".txt", ".md")):
+        testo = decodifica_testo(dati)
+        return testo, f"testo, {len(testo)} caratteri"
+    raise ValueError("formato non supportato")
+
+def elabora_file_caricati(files):
+    testi_documenti = []
+    immagini_payload = []
+    avvisi = []
+    
+    for f in files:
+        ext = f.name.lower()
+        if ext.endswith((".jpg", ".jpeg", ".png", ".webp")):
+            import base64
+            encoded = base64.b64encode(f.getvalue()).decode("utf-8")
+            mime = "image/jpeg" if ext in [".jpg", ".jpeg"] else f"image/{ext.replace('.', '')}"
+            immagini_payload.append({
