@@ -63,3 +63,28 @@ st.markdown(
     <div class="testata">
       <div class="reattore"></div>
       <div>
+        <div class="titolo">TEO</div>
+        <div class="sottotitolo">Il tuo Co-DJ e consulente musicale (Locale)</div>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+ISTRUZIONI_DI_RISERVA = "Sei Teo, il Co-DJ e consulente musicale personale dell'utente. Rispondi sempre in italiano, in modo chiaro e conciso."
+REGOLE_TECNICHE = "Regole tecniche: - Se ti vengono forniti RISULTATI DI RICERCA WEB, usali come base per i dati aggiornati. - Se ti vengono forniti DOCUMENTI CARICATI DALL'UTENTE, usali come fonte principale."
+
+def carica_istruzioni():
+    try:
+        percorso = Path(__file__).parent / "istruzioni_teo.txt"
+        testo = percorso.read_text(encoding="utf-8").strip()
+        if testo:
+            return testo, True
+    except Exception:
+        pass
+    return ISTRUZIONI_DI_RISERVA, False
+
+TESTO_REGOLE, FILE_CARICATO = carica_istruzioni()
+ISTRUZIONI = TESTO_REGOLE + "\n" + REGOLE_TECNICHE
+
+try:
