@@ -95,12 +95,13 @@ except Exception:
     st.error("Manca la chiave Groq. Su Streamlit apri Settings > Secrets e inserisci: GROQ_API_KEY = 'la-tua-chiave'")
     st.stop()
 
+# --- LISTA MODELLI ULTRA-SICURA (SENZA MODELLI PENSIONATI) ---
 MODELLI_SICURI = [
-    "llama-3.1-70b-versatile",
-    "llama-3.1-8b-instant",
-    "llama-3.2-11b-vision-preview",
-    "llama-3.2-90b-vision-preview",
-    "mixtral-8x7b-32768"
+    "llama-3.1-8b-instant",         # Veloce, leggero e sempre attivo
+    "mixtral-8x7b-32768",           # Il migliore per testi lunghi e scalette, stabilissimo
+    "llama-3.2-11b-vision-preview", # Indispensabile per fargli leggere le immagini .jpg
+    "llama-3.2-90b-vision-preview", # Visione super avanzata
+    "gemma2-9b-it"                  # Alternativa di casa Google molto solida
 ]
 
 def decidi_ricerca(modello, messaggi):
@@ -260,7 +261,7 @@ with st.sidebar:
         "Cervello (modello)", 
         MODELLI_SICURI, 
         index=0,
-        help="Usa llama-3.1-70b-versatile per i testi, oppure i modelli Vision per leggere le immagini .jpg."
+        help="Usa llama-3.1-8b o mixtral per chattare, oppure i modelli Vision per fargli leggere foto e locandine."
     )
 
     ricerca_attiva = st.toggle("Ricerca online", value=True)
