@@ -88,3 +88,58 @@ TESTO_REGOLE, FILE_CARICATO = carica_istruzioni()
 ISTRUZIONI = TESTO_REGOLE + "\n" + REGOLE_TECNICHE
 
 try:
+    client_locale = OpenAI(
+        api_key="not-needed",
+        base_url="http://localhost:1234/v1"
+    )
+except Exception:
+    client_locale = None
+
+def cerca_web(ricerca):
+    try:
+        from duckduckgo_search import DDGS
+        risultati = DDGS().text(ricerca, region="it-it", max_results=5)
+        return list(risultati or []), ""
+    except Exception as errore:
+        return [], str(errore)
+
+def testo_per_il_cervello(ricerca, risultati):
+    righe = [f"RISULTATI DI RICERCA WEB (ricerca: '{ricerca}'):"]
+    for i, r in enumerate(risultati, 1):
+        righe.append(f"[{i}] {r.get('title', '')} - {r.get('body', '')} (fonte: {r.get('href', '')})")
+    return "\n".join(righe)
+
+def testo_fonti(risultati):
+    return "\n".join(f"- [{r.get('title', 'Fonte')}]({r.get('href', '')})" for r in risultati if r.get("href"))
+
+def leggi_csv(dati):
+    for codifica in ("utf-8", "latin-1"):
+        try:
+            return pd.read_csv(io.BytesIO(dati), sep=None, engine="python", encoding=codifica)
+        except Exception:
+            continue
+    raise ValueError("CSV non leggibile")
+
+def decodifica_testo(dati):
+    for codifica in ("utf-8", "latin-1"):
+        try:
+            return dati.decode(codifica)
+        except Exception:
+            continue
+    return dati.decode("utf-8", errors="ignore")
+
+@st.cache_data(show_spinner=False)
+def estrai_testo(nome, dati):
+    n = nome.lower()
+    if n.endswith(".csv"):
+        df = leggi_csv(dati)
+        return df.to_csv(index=False), f"CSV, {len(df)} righe"
+    if n.endswith((".xlsx", ".xlsm")):
+        fogli = pd.read_excel(io.BytesIO(dati), sheet_name=None)
+        parti = []
+        for nome_foglio, df in fogli.items():
+            parti.append(f"--- Foglio '{nome_foglio}' ---\n{df.to_csv(index=False)}")
+        return "\n".join(parti), f"Excel, {len(fogli)} fogli"
+    if n.endswith(".docx"):
+        from docx import Document
+        d
