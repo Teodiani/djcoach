@@ -98,11 +98,11 @@ except Exception:
     st.error("⚠️ Manca la chiave GEMINI_API_KEY nei Secrets di Streamlit. Aggiungila per continuare.")
     st.stop()
 
-# --- LISTA MODELLI GOOGLE GEMINI ---
+# --- LISTA MODELLI CORRETTA CON PREFISSO MODELS/ ---
 MODELLI_SICURI = [
-    "gemini-1.5-flash",       # Il migliore: velocissimo, intelligente e legge le immagini
-    "gemini-1.5-flash-8b",    # Super leggero e istantaneo
-    "gemini-1.5-pro"          # Ragionamento avanzato per analisi complesse
+    "models/gemini-1.5-flash",
+    "models/gemini-1.5-flash-8b",
+    "models/gemini-1.5-pro"
 ]
 
 def decidi_ricerca(modello, messaggi):
