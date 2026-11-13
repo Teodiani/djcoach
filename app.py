@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-from groq import Groq
+from openai import OpenAI
 
 st.set_page_config(page_title="Teo", page_icon="🎧", layout="centered")
 
@@ -73,7 +73,6 @@ st.markdown(
 )
 
 ISTRUZIONI_DI_RISERVA = "Sei Teo, il Co-DJ e consulente musicale personale dell'utente. Rispondi sempre in italiano, in modo chiaro e conciso."
-
 REGOLE_TECNICHE = "Regole tecniche: - Se ti vengono forniti RISULTATI DI RICERCA WEB, usali come base per i dati aggiornati. - Se ti vengono forniti DOCUMENTI o IMMAGINI CARICATI DALL'UTENTE, usali come fonte principale."
 
 def carica_istruzioni():
@@ -89,25 +88,28 @@ def carica_istruzioni():
 TESTO_REGOLE, FILE_CARICATO = carica_istruzioni()
 ISTRUZIONI = TESTO_REGOLE + "\n" + REGOLE_TECNICHE
 
+# --- SETUP CHIAVE GEMINI ---
 try:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    client_gemini = OpenAI(
+        api_key=st.secrets["GEMINI_API_KEY"],
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
 except Exception:
-    st.error("Manca la chiave Groq. Su Streamlit apri Settings > Secrets e inserisci: GROQ_API_KEY = 'la-tua-chiave'")
+    st.error("⚠️ Manca la chiave GEMINI_API_KEY nei Secrets di Streamlit. Aggiungila per continuare.")
     st.stop()
 
-# --- LISTA MODELLI ULTRA-SICURA E BLINDATA ---
+# --- LISTA MODELLI GOOGLE GEMINI ---
 MODELLI_SICURI = [
-    "llama-3.1-8b-instant",         # Veloce, leggero e sempre attivo
-    "gemma2-9b-it",                 # Modello Google molto stabile e intelligente
-    "llama-3.2-11b-vision-preview", # Indispensabile per fargli leggere le immagini .jpg
-    "llama-3.2-90b-vision-preview"  # Visione super avanzata
+    "gemini-1.5-flash",       # Il migliore: velocissimo, intelligente e legge le immagini
+    "gemini-1.5-flash-8b",    # Super leggero e istantaneo
+    "gemini-1.5-pro"          # Ragionamento avanzato per analisi complesse
 ]
 
 def decidi_ricerca(modello, messaggi):
     regole = "Sei un filtro. Decidi se per rispondere all'ultimo messaggio dell'utente serve cercare informazioni aggiornate su internet. Rispondi SOLO con un oggetto JSON: {'cerca': 'query breve'} oppure {'cerca': ''} se non serve."
     try:
         ultimi = [{"role": m["role"], "content": m["content"]} for m in messaggi[-6:]]
-        r = client.chat.completions.create(
+        r = client_gemini.chat.completions.create(
             model=modello,
             messages=[{"role": "system", "content": regole}] + ultimi,
             temperature=0,
@@ -232,17 +234,6 @@ def pulsanti_scarica(testo, chiave):
             st.download_button("Word (.docx)", data=dati_word, file_name="teo_risposta.docx", key=f"word_{chiave}")
         st.download_button("Testo (.txt)", data=testo.encode("utf-8"), file_name="teo_risposta.txt", key=f"txt_{chiave}")
 
-def trascrivi(dati_audio):
-    try:
-        r = client.audio.transcriptions.create(
-            file=("voce.wav", dati_audio),
-            model="whisper-large-v3-turbo",
-            language="it",
-        )
-        return (getattr(r, "text", "") or "").strip(), ""
-    except Exception as errore:
-        return "", str(errore)
-
 MODELLO_VOCE = """<div style="display:flex; gap:8px;"><button id="ascolta" style="padding:6px 14px; border:1px solid #4fd8ff; background:transparent; color:#4fd8ff; border-radius:6px; cursor:pointer;">🔊 Ascolta</button><button id="ferma" style="padding:6px 14px; border:1px solid #4fd8ff; background:transparent; color:#4fd8ff; border-radius:6px; cursor:pointer;">⏹ Stop</button></div><script>const testo = __TESTO__; function parla() { if (!window.speechSynthesis) { return; } window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(testo); u.lang = 'it-IT'; window.speechSynthesis.speak(u); } document.getElementById('ascolta').onclick = parla; document.getElementById('ferma').onclick = () => window.speechSynthesis.cancel(); if (__AUTO__) { setTimeout(parla, 300); }</script>"""
 
 def voce_html(testo, automatica=False):
@@ -254,17 +245,16 @@ def voce_html(testo, automatica=False):
 
 # ==================== MENU LATERALE ====================
 with st.sidebar:
-    st.markdown("### Impostazioni")
+    st.markdown("### Impostazioni (Motore Gemini)")
     
     modello = st.selectbox(
         "Cervello (modello)", 
         MODELLI_SICURI, 
         index=0,
-        help="Usa llama-3.1-8b o gemma2 per chattare, oppure i modelli Vision per fargli leggere foto e locandine."
+        help="Usa gemini-1.5-flash per tutto: chat veloce, file di catalogo e analisi immagini."
     )
 
     ricerca_attiva = st.toggle("Ricerca online", value=True)
-    microfono_attivo = st.toggle("Microfono (parli tu)", value=True)
     voce_attiva = st.toggle("Risposta a voce", value=True)
 
     file_caricati = st.file_uploader(
@@ -288,31 +278,14 @@ with st.sidebar:
 # ==================== CHAT PRINCIPALE ====================
 if "messaggi" not in st.session_state:
     st.session_state.messaggi = []
-if "ultimo_audio" not in st.session_state:
-    st.session_state.ultimo_audio = ""
 
 zona_storia = st.container()
-zona_microfono = st.container()
-
-testo_vocale = ""
-if microfono_attivo:
-    with zona_microfono:
-        registrazione = st.audio_input("🎙️ Tocca per parlare")
-        if registrazione is not None:
-            dati = registrazione.getvalue()
-            impronta = hashlib.md5(dati).hexdigest()
-            if impronta != st.session_state.ultimo_audio:
-                st.session_state.ultimo_audio = impronta
-                with st.spinner("Ti ascolto..."):
-                    testo_vocale, _ = trascrivi(dati)
 
 domanda = st.chat_input("Scrivi a Teo...")
-if testo_vocale:
-    domanda = testo_vocale
 
 with zona_storia:
     if not st.session_state.messaggi:
-        st.markdown("Ciao, sono Teo, il tuo Co-DJ. Scegli il modello a sinistra, carica un documento o un'immagine `.jpg` oppure scrivimi qui sotto!")
+        st.markdown("Ciao, sono Teo, il tuo Co-DJ (ora potenziato da Google Gemini). Scegli il modello a sinistra, carica i tuoi file o scrivimi qui sotto!")
 
     ultimo = len(st.session_state.messaggi) - 1
     for indice, m in enumerate(st.session_state.messaggi):
@@ -356,7 +329,7 @@ with zona_storia:
                         content_msg = [{"type": "text", "text": m["content"]}] + immagini_per_ia
                     storia.append({"role": m["role"], "content": content_msg})
 
-                flusso = client.chat.completions.create(
+                flusso = client_gemini.chat.completions.create(
                     model=modello,
                     messages=[{"role": "system", "content": istruzioni}] + storia,
                     stream=True,
@@ -366,14 +339,14 @@ with zona_storia:
                     spazio.markdown(risposta + "▌")
                 spazio.markdown(risposta)
             except Exception as errore:
-                risposta = f"Non riesco a rispondere: {errore}"
+                risposta = f"Errore di connessione: {errore}"
                 spazio.error(risposta)
 
             if fonti:
                 with st.expander("Fonti"):
                     st.markdown(fonti)
 
-            if voce_attiva and not risposta.startswith("Non riesco"):
+            if voce_attiva and not risposta.startswith("Errore"):
                 voce_html(risposta, automatica=True)
 
         st.session_state.messaggi.append({"role": "assistant", "content": risposta, "fonti": fonti})
