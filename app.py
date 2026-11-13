@@ -59,9 +59,4 @@ section[data-testid="stSidebar"] { background: var(--pannello); border-right: 1p
 }
 [data-testid="stChatInput"] textarea { color: var(--ghiaccio); }
 .stButton button, .stDownloadButton button { border: 1px solid var(--reattore); background: transparent; color: var(--reattore); font-family: 'Rajdhani', sans-serif; font-weight: 600; }
-.stButton button:hover, .stDownloadButton button:hover { background: var(--reattore); color: var(--fondo); border-color: var(--reattore); }
-</style>
-"""
-st.markdown(STILE, unsafe_allow_html=True)
-
-st.markdown(
+.st
