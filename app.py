@@ -113,15 +113,14 @@ except Exception:
     st.stop()
 
 
-@st.cache_data(ttl=3600)
-def elenco_modelli():
-    escludi = ("whisper", "guard", "tts", "playai", "orpheus", "safeguard")
-    try:
-        ids = [m.id for m in client.models.list().data]
-        ids = [i for i in ids if not any(x in i.lower() for x in escludi)]
-        return sorted(ids)
-    except Exception:
-        return []
+# ---------- Lista modelli consigliati e testati su Groq ----------
+MODELLI_CONSIGLIATI = [
+    "llama-3.3-70b-versatile",      # Il migliore in assoluto per qualità e ragionamento
+    "llama-3.2-11b-vision-preview",   # Ottimo per leggere immagini (.jpg) e locandine
+    "llama-3.2-90b-vision-preview",   # Massima qualità visiva e testuale
+    "llama3-70b-8192",              # Stabile e veloce
+    "mixtral-8x7b-32768"            # Ottimo per testi lunghi
+]
 
 
 # ---------- Ricerca online ----------
@@ -227,7 +226,6 @@ def elabora_file_caricati(files):
     for f in files:
         ext = f.name.lower()
         if ext.endswith((".jpg", ".jpeg", ".png", ".webp")):
-            # È un'immagine: prepariamo il formato per i modelli Vision di Groq
             import base64
             encoded = base64.b64encode(f.getvalue()).decode("utf-8")
             mime = "image/jpeg" if ext in [".jpg", ".jpeg"] else f"image/{ext.replace('.', '')}"
@@ -236,7 +234,6 @@ def elabora_file_caricati(files):
                 "image_url": {"url": f"data:{mime};base64,{encoded}"}
             })
         else:
-            # È un documento testuale
             try:
                 testo, info = estrai_testo(f.name, f.getvalue())
                 testi_documenti.append(f"FILE '{f.name}' ({info}):\n{testo}")
@@ -316,18 +313,14 @@ def voce_html(testo, automatica=False):
 # ==================== MENU LATERALE ====================
 with st.sidebar:
     st.markdown("### Impostazioni")
-    modelli = elenco_modelli()
-    if modelli:
-        preferiti = ("llama-3.2-11b-vision-preview", "llama-3.3-70b", "gpt-oss")
-        predefinito = 0
-        for parola in preferiti:
-            trovato = next((i for i, m in enumerate(modelli) if parola in m.lower()), None)
-            if trovato is not None:
-                predefinito = trovato
-                break
-        modello = st.selectbox("Cervello (modello)", modelli, index=predefinito)
-    else:
-        modello = st.text_input("Cervello (modello)", value="llama-3.2-11b-vision-preview")
+    
+    # Selezione tra i modelli di altissima qualità e vision
+    modello = st.selectbox(
+        "Cervello (modello)", 
+        MODELLI_CONSIGLIATI, 
+        index=0,
+        help="Usa llama-3.3-70b per conversazioni e testi, oppure i modelli Vision per leggere i file .jpg e le immagini."
+    )
 
     ricerca_attiva = st.toggle("Ricerca online", value=True)
     microfono_attivo = st.toggle("Microfono (parli tu)", value=True)
@@ -379,7 +372,7 @@ if testo_vocale:
 
 with zona_storia:
     if not st.session_state.messaggi:
-        st.markdown("Ciao, sono Teo, il tuo Co-DJ. Carica un documento o un'immagine `.jpg` nella barra laterale oppure scrivimi qui sotto!")
+        st.markdown("Ciao, sono Teo, il tuo Co-DJ. Scegli il modello a sinistra, carica un documento o un'immagine `.jpg` oppure scrivimi qui sotto!")
 
     ultimo = len(st.session_state.messaggi) - 1
     for indice, m in enumerate(st.session_state.messaggi):
@@ -419,7 +412,6 @@ with zona_storia:
                 storia = []
                 for m in st.session_state.messaggi[-20:]:
                     content_msg = m["content"]
-                    # Se ci sono immagini allegate nell'ultimo messaggio utente, le passiamo come oggetti visivi
                     if m["role"] == "user" and m == st.session_state.messaggi[-1] and immagini_per_ia:
                         content_msg = [{"type": "text", "text": m["content"]}] + immagini_per_ia
                     storia.append({"role": m["role"], "content": content_msg})
