@@ -80,3 +80,39 @@ def carica_istruzioni():
         testo = percorso.read_text(encoding="utf-8").strip()
         if testo:
             return testo, True
+    except Exception:
+        pass
+    return ISTRUZIONI_DI_RISERVA, False
+
+TESTO_REGOLE, FILE_CARICATO = carica_istruzioni()
+ISTRUZIONI = TESTO_REGOLE + "\n" + REGOLE_TECNICHE
+
+try:
+    client_locale = OpenAI(
+        api_key="not-needed",
+        base_url="http://localhost:1234/v1"
+    )
+except Exception:
+    client_locale = None
+
+def cerca_web(ricerca):
+    try:
+        from duckduckgo_search import DDGS
+        risultati = DDGS().text(ricerca, region="it-it", max_results=5)
+        return list(risultati or []), ""
+    except Exception as errore:
+        return [], str(errore)
+
+def testo_per_il_cervello(ricerca, risultati):
+    righe = [f"RISULTATI DI RICERCA WEB (ricerca: '{ricerca}'):"]
+    for i, r in enumerate(risultati, 1):
+        righe.append(f"[{i}] {r.get('title', '')} - {r.get('body', '')} (fonte: {r.get('href', '')})")
+    return "\n".join(righe)
+
+def testo_fonti(risultati):
+    return "\n".join(f"- [{r.get('title', 'Fonte')}]({r.get('href', '')})" for r in risultati if r.get("href"))
+
+def leggi_csv(dati):
+    for codifica in ("utf-8", "latin-1"):
+        try:
+            return pd.read
