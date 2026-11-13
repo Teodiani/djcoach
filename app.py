@@ -74,4 +74,9 @@ st.markdown(
 ISTRUZIONI_DI_RISERVA = "Sei Teo, il Co-DJ e consulente musicale personale dell'utente. Rispondi sempre in italiano, in modo chiaro e conciso."
 REGOLE_TECNICHE = "Regole tecniche: - Se ti vengono forniti RISULTATI DI RICERCA WEB, usali come base per i dati aggiornati. - Se ti vengono forniti DOCUMENTI CARICATI DALL'UTENTE, usali come fonte principale."
 
-def carica_
+def carica_istruzioni():
+    try:
+        percorso = Path(__file__).parent / "istruzioni_teo.txt"
+        testo = percorso.read_text(encoding="utf-8").strip()
+        if testo:
+            return testo, True
