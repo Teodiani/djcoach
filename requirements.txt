@@ -1,6 +1,6 @@
-streamlit>=1.40
-groq
-ddgs
-pypdf
+streamlit
+openai
+pandas
 python-docx
-openpyxl
+pypdf
+duckduckgo_search
