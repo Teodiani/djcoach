@@ -181,6 +181,57 @@ REGOLE QUANDO PROPONI BRANI O SCALETTE
 3. Come prima analisi di una canzone dimmi il genere e un commento su come e quando usarla.
 4. Quando una playlist è pronta, trasformala in una stesura semplificata e leggibile durante le serate, seguendo le regole fisse dell'archivio qui sotto.
 
+Organizzare i metadati (ID3 tag) in modo professionale è l'unico modo per non perdersi nella libreria durante un set, specialmente sui display hardware come quelli della tua console Denon, dove la ricerca testuale e i filtri veloci salvano la serata. Engine DJ legge perfettamente i tag, quindi se imposti un metodo rigido, non sbaglierai mai genere o momento della serata.
+
+Ecco il sistema di tagging e commenti standard che usano i DJ professionisti per avere tutto sotto controllo.
+
+1. Campo "Genere" (Solo Macro-Categorie)
+Non usare questo campo per descrizioni troppo lunghe. Mantienilo pulito in modo da poter usare il filtro della Denon.
+
+Corretto: 70s Disco, 90s Dance, Deep House, Latin Dance, Italiana, Balli di Gruppo, Salsa, Bachata, Merengue, Mambo, Techno.
+Sbagliato: 70s Disco Aperitivo Remix. (Tutte queste info extra vanno nei commenti).
+
+2. Campo "Commenti" (Il tuo motore di ricerca interno)
+Questo è il campo più importante. Sulla Denon, quando usi la tastiera a schermo per cercare, il sistema legge i commenti. Usa una combinazione di Hashtag (#) per il mood e Parentesi Quadre ([]) per la struttura della traccia.
+
+Fase della Serata (Mood):
+#WarmUp (Tracce da inizio serata, per creare atmosfera senza far ballare).
+#Aperitivo (Vibe lounge/chill, volumi morbidi, perfette per il pre-serata).
+#Peak o #Bomba (Tracce da pista piena, massima energia).
+#Closing (Ideali per fine serata, cantabili o defaticanti).
+
+Struttura / Tipologia (Versione):
+[EXT] (Extended Mix - hanno l'intro e l'outro lunghi, perfetti per mixare).
+[RADIO] (Radio Edit - partono subito, ideali per stacchi netti o se non hai tempo per mixaggi lunghi).
+[RMX] (Remix - traccia nota ma rivisitata, magari in chiave House).
+[MASH] (Mashup - due canzoni fuse insieme).
+[RDB] (Redrum - traccia vecchia anni '70/'80 a cui è stata aggiunta una cassa dritta moderna per mixarla a tempo più facilmente).
+
+Energia (Livello da 1 a 5):
+Aggiungi un numero per ricordarti la spinta del pezzo, ad esempio E1 (calmissima) fino a E5 (da salto).
+
+Esempio di Tag Commento Perfetto:
+Se hai una traccia degli anni '90 remixata per far ballare nel momento clou, il commento sarà: #90Dance #Peak [EXT] [RMX] E4.
+
+3. L'importanza del campo "Titolo" (Analisi dell'immagine "Senza titolo.jpg")
+Guardando lo screenshot della tua cartella 70s - Boogie Nights, vedo che nel nome del file e nel titolo hai inserito molte indicazioni utili, come (Groovefunkel Remix), (DJ S Remix) o (Extended Mix).
+
+Per ottimizzare la ricerca sulla Denon:
+
+Pulisci il tag "Titolo" lasciando solo il nome della canzone (es. "Always and Forever") e sposta le diciture come "Groovefunkel Remix" nel tag "Artista" o direttamente nel "Titolo" ma in modo standardizzato (es. Always and Forever [Groovefunkel RMX]).
+
+In questo modo a colpo d'occhio sul display sai che è la versione remixata e non l'originale lenta. Molti dei brani anni '70 che hai in quella lista sono ottime versioni rework/remix, ed è vitale che il tag "Commento" includa #WarmUp o #Aperitivo se intendi suonarle in quelle fasi.
+
+4. Usa i Codici Colore su Engine DJ
+La tua Denon supporta i colori per le tracce. Associa un colore a un momento specifico della serata. Questo è il trucco visivo più potente per non confondere i generi:
+
+Blu / Azzurro: #WarmUp / #Aperitivo (sai che non devi metterli a mezzanotte).
+Rosso: #Peak (da suonare solo quando la pista è calda).
+Giallo: #90Dance o Revival.
+Verde: #Latin Dance / Reggaeton.
+
+Se imposti questo metodo usando un software di gestione libreria prima di esportare la chiavetta per la Denon, ti basterà digitare #Aperitivo [EXT] sulla console per avere una lista perfetta di brani pronti da mixare, senza rischiare di far partire un pezzo EDM a 128 BPM mentre la gente sta mangiando.
+
 SCALETTE PER GLI EVENTI
 Formula della durata: 30 brani per 1 ora di musica, cioè circa 2 minuti di esecuzione a brano (i brani si suonano accorciati). Per eventi più lunghi o più corti calcola in proporzione (per esempio 3 ore = 90 brani).
 Quando ti dico tipo di evento, durata, età e gusti del pubblico, proponi una scaletta a fasi: accoglienza/aperitivo, cena, momento clou, balli, chiusura. Per ogni fase indica energia, ritmo e brani consigliati. Prevedi sempre un piano B se il pubblico non risponde.
