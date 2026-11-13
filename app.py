@@ -95,11 +95,13 @@ except Exception:
     st.error("Manca la chiave Groq. Su Streamlit apri Settings > Secrets e inserisci: GROQ_API_KEY = 'la-tua-chiave'")
     st.stop()
 
+# --- ECCO LA LISTA AGGIORNATA CON I MODELLI FUNZIONANTI ---
 MODELLI_SICURI = [
-    "llama3-70b-8192",
-    "llama-3.2-11b-vision-preview",
-    "llama-3.2-90b-vision-preview",
-    "mixtral-8x7b-32768"
+    "llama-3.1-70b-versatile",      # Sostituto ufficiale del vecchio 70b, perfetto e intelligente
+    "llama-3.1-8b-instant",         # Versione leggerissima e istantanea
+    "llama-3.2-11b-vision-preview", # Per leggere immagini (.jpg, .png)
+    "llama-3.2-90b-vision-preview", # Visione e ragionamento super avanzati
+    "mixtral-8x7b-32768"            # Modello alternativo per testi lunghi
 ]
 
 def decidi_ricerca(modello, messaggi):
@@ -259,7 +261,7 @@ with st.sidebar:
         "Cervello (modello)", 
         MODELLI_SICURI, 
         index=0,
-        help="Usa llama3-70b per i testi e la chat, oppure i modelli Vision per leggere le immagini .jpg."
+        help="Usa llama-3.1-70b-versatile per i testi, oppure i modelli Vision per leggere le immagini .jpg."
     )
 
     ricerca_attiva = st.toggle("Ricerca online", value=True)
@@ -317,62 +319,4 @@ with zona_storia:
     for indice, m in enumerate(st.session_state.messaggi):
         with st.chat_message(m["role"]):
             st.markdown(m["content"])
-            if m.get("fonti"):
-                with st.expander("Fonti"):
-                    st.markdown(m["fonti"])
-            if not domanda and indice == ultimo and m["role"] == "assistant":
-                if voce_attiva:
-                    voce_html(m["content"], automatica=False)
-
-    if domanda:
-        st.session_state.messaggi.append({"role": "user", "content": domanda})
-        with st.chat_message("user"):
-            st.markdown(domanda)
-
-        with st.chat_message("assistant"):
-            istruzioni = ISTRUZIONI + f"\nOggi è il {date.today().strftime('%d/%m/%Y')}."
-            if contesto_documenti:
-                istruzioni += "\n\n" + contesto_documenti
-            fonti = ""
-
-            if ricerca_attiva:
-                with st.spinner("Controllo se serve cercare online..."):
-                    ricerca = decidi_ricerca(modello, st.session_state.messaggi)
-                if ricerca:
-                    with st.spinner(f"Cerco online: {ricerca}"):
-                        risultati, _ = cerca_web(ricerca)
-                    if risultati:
-                        istruzioni += "\n\n" + testo_per_il_cervello(ricerca, risultati)
-                        fonti = testo_fonti(risultati)
-
-            spazio = st.empty()
-            risposta = ""
-            try:
-                storia = []
-                for m in st.session_state.messaggi[-20:]:
-                    content_msg = m["content"]
-                    if m["role"] == "user" and m == st.session_state.messaggi[-1] and immagini_per_ia:
-                        content_msg = [{"type": "text", "text": m["content"]}] + immagini_per_ia
-                    storia.append({"role": m["role"], "content": content_msg})
-
-                flusso = client.chat.completions.create(
-                    model=modello,
-                    messages=[{"role": "system", "content": istruzioni}] + storia,
-                    stream=True,
-                )
-                for pezzo in flusso:
-                    risposta += pezzo.choices[0].delta.content or ""
-                    spazio.markdown(risposta + "▌")
-                spazio.markdown(risposta)
-            except Exception as errore:
-                risposta = f"Non riesco a rispondere: {errore}"
-                spazio.error(risposta)
-
-            if fonti:
-                with st.expander("Fonti"):
-                    st.markdown(fonti)
-
-            if voce_attiva and not risposta.startswith("Non riesco"):
-                voce_html(risposta, automatica=True)
-
-        st.session_state.messaggi.append({"role": "assistant", "content": risposta, "fonti": fonti})
+            if m
