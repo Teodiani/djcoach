@@ -9,7 +9,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 from openai import OpenAI
 
-st.set_page_config(page_title="Teo", page_icon="🎧", layout="centered")
+# Qui forziamo l'apertura del menu laterale!
+st.set_page_config(page_title="Teo", page_icon="🎧", layout="centered", initial_sidebar_state="expanded")
 
 STILE = """
 <style>
@@ -102,3 +103,25 @@ def cerca_web(ricerca):
         return list(risultati or []), ""
     except Exception as errore:
         return [], str(errore)
+
+def testo_per_il_cervello(ricerca, risultati):
+    righe = [f"RISULTATI DI RICERCA WEB (ricerca: '{ricerca}'):"]
+    for i, r in enumerate(risultati, 1):
+        righe.append(f"[{i}] {r.get('title', '')} - {r.get('body', '')} (fonte: {r.get('href', '')})")
+    return "\n".join(righe)
+
+def testo_fonti(risultati):
+    return "\n".join(f"- [{r.get('title', 'Fonte')}]({r.get('href', '')})" for r in risultati if r.get("href"))
+
+def leggi_csv(dati):
+    for codifica in ("utf-8", "latin-1"):
+        try:
+            return pd.read_csv(io.BytesIO(dati), sep=None, engine="python", encoding=codifica)
+        except Exception:
+            continue
+    raise ValueError("CSV non leggibile")
+
+def decodifica_testo(dati):
+    for codifica in ("utf-8", "latin-1"):
+        try:
+            return dati.decode(cod
